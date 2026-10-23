@@ -46,6 +46,7 @@ export class RanobesPlugin implements Plugin.PluginBase {
       (title == 'Bot Verification' ||
         title == 'You are being redirected...' ||
         title == 'Un instant...' ||
+        title == 'One moment...' ||
         title == 'Just a moment...' ||
         title == 'Redirecting...')
     )
