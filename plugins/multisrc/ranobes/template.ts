@@ -28,7 +28,7 @@ export class RanobesPlugin implements Plugin.PluginBase {
     this.name = metadata.sourceName;
     this.icon = 'multisrc/ranobes/ranobes/icon.png';
     this.site = metadata.sourceSite;
-    this.version = '2.1.0';
+    this.version = '2.1.1';
     this.options = metadata.options as RanobesOptions;
   }
 
