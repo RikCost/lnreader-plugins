@@ -28,7 +28,7 @@ export class RanobesPlugin implements Plugin.PluginBase {
     this.name = metadata.sourceName;
     this.icon = 'multisrc/ranobes/ranobes/icon.png';
     this.site = metadata.sourceSite;
-    this.version = '2.0.3';
+    this.version = '2.1.0';
     this.options = metadata.options as RanobesOptions;
   }
 
@@ -365,21 +365,64 @@ export class RanobesPlugin implements Plugin.PluginBase {
     novel.totalPages = Math.ceil((maxChapters || 1) / 25);
     novel.chapters = chapters;
 
-    if (novel.chapters[0].path) {
-      novel.latestChapter = novel.chapters[0];
+    // the novel page only lists the latest chapters; load the oldest page
+    // so the list starts from the first chapter
+    try {
+      const newest = await this.fetchChapterList(novelPath, 1);
+      novel.totalPages = newest.pagesCount;
+      if (newest.chapters[0]?.path) {
+        novel.latestChapter = newest.chapters[0];
+      }
+      novel.chapters = (
+        newest.pagesCount > 1
+          ? (await this.fetchChapterList(novelPath, newest.pagesCount)).chapters
+          : newest.chapters
+      )
+        .reverse()
+        .map(chapter => ({ ...chapter, page: '1' }));
+    } catch {
+      // keep the latest chapters from the novel page
+      novel.chapters = chapters.reverse();
+    }
+
+    if (!novel.latestChapter && novel.chapters.length) {
+      novel.latestChapter = novel.chapters[novel.chapters.length - 1];
     }
 
     return novel;
   }
 
+  // The site lists chapters newest first, so app page 1 (oldest chapters)
+  // is the last page of the site's table of contents.
   async parsePage(novelPath: string, page: string): Promise<Plugin.SourcePage> {
+    let pagesCount = this.pagesCount[novelPath];
+    if (!pagesCount) {
+      pagesCount = (await this.fetchChapterList(novelPath, 1)).pagesCount;
+    }
+    const sitePage = Math.max(pagesCount - parseInt(page, 10) + 1, 1);
+    const { chapters } = await this.fetchChapterList(novelPath, sitePage);
+
+    return {
+      chapters: chapters.reverse(),
+    };
+  }
+
+  pagesCount: Record<string, number> = {};
+
+  // chapters of one site page, newest first
+  async fetchChapterList(
+    novelPath: string,
+    sitePage: number,
+  ): Promise<{ chapters: Plugin.ChapterItem[]; pagesCount: number }> {
     const pagePath =
       this.id == 'ranobes'
         ? novelPath.split('-')[0]
         : '/' + novelPath.split('-').slice(1).join('-').split('.')[0];
-    const firstUrl =
-      this.site + '/chapters' + pagePath.replace(this.options.path + '/', '');
-    const pageBody = await this.safeFecth(firstUrl + '/page/' + page);
+    const chaptersPath =
+      '/chapters' + pagePath.replace(this.options.path + '/', '');
+    const pageBody = await this.safeFecth(
+      this.site + chaptersPath + '/page/' + sitePage,
+    );
 
     const baseUrl = this.site;
     let isScript = false;
@@ -446,12 +489,22 @@ export class RanobesPlugin implements Plugin.PluginBase {
     parser.end();
 
     if (dataJson.chapters?.length) {
-      chapters = this.parseChapters(dataJson);
+      // parseChapters returns oldest first
+      chapters = this.parseChapters(dataJson).reverse();
     }
 
-    return {
-      chapters,
-    };
+    const pageLinks = pageBody
+      .split(chaptersPath + '/page/')
+      .slice(1)
+      .map(rest => parseInt(rest, 10) || 1);
+    const pagesCount = Math.max(
+      parseInt(dataJson.pages_count, 10) || 1,
+      sitePage,
+      ...pageLinks,
+    );
+    this.pagesCount[novelPath] = pagesCount;
+
+    return { chapters, pagesCount };
   }
 
   async parseChapter(chapterPath: string): Promise<string> {
