@@ -364,68 +364,100 @@ export class RanobesPlugin implements Plugin.PluginBase {
       .trim();
     novel.genres = genreArray.join(', ');
     novel.totalPages = Math.ceil((maxChapters || 1) / 25);
-    novel.chapters = chapters;
 
-    // the novel page only lists the latest chapters; load the oldest page
-    // so the list starts from the first chapter. Errors are not swallowed:
-    // the latest chapters would end up on page 1 in the wrong order.
-    const newest = await this.fetchChapterList(novelPath, 1);
-    // parsePage maps pages with this count until the novel is reloaded
-    this.pagesCount[novelPath] = newest.pagesCount;
-    novel.totalPages = newest.pagesCount;
-    if (newest.chapters[0]?.path) {
-      novel.latestChapter = newest.chapters[0];
-    }
-    novel.chapters = (
-      newest.pagesCount > 1
-        ? (await this.fetchChapterList(novelPath, newest.pagesCount)).chapters
-        : newest.chapters
-    )
-      .reverse()
-      .map(chapter => ({ ...chapter, page: '1' }));
-
-    if (!novel.latestChapter && novel.chapters.length) {
-      novel.latestChapter = novel.chapters[novel.chapters.length - 1];
+    // The novel page only lists the latest chapters, so the list comes from
+    // the table of contents. Errors are not swallowed: the latest chapters
+    // would end up on page 1 in the wrong order.
+    const toc = await this.getToc(novelPath, html);
+    novel.totalPages = toc.pagesCount;
+    novel.latestChapter = toc.latestChapter;
+    novel.chapters = (await this.getAppPage(toc, 1)).map(chapter => ({
+      ...chapter,
+      page: '1',
+    }));
+    if (!novel.chapters.length && chapters.length) {
+      novel.chapters = chapters.reverse();
     }
 
     return novel;
   }
 
-  // The site lists chapters newest first, so app page 1 (oldest chapters)
-  // is the last page of the site's table of contents.
   async parsePage(novelPath: string, page: string): Promise<Plugin.SourcePage> {
-    // keep one page count while paging, otherwise a novel that grows a page
-    // between calls makes pages repeat or skip
-    let pagesCount = this.pagesCount[novelPath];
-    if (!pagesCount) {
-      pagesCount = (await this.fetchChapterList(novelPath, 1)).pagesCount;
-      this.pagesCount[novelPath] = pagesCount;
-    }
-    const sitePage = Math.max(pagesCount - parseInt(page, 10) + 1, 1);
-    const { chapters } = await this.fetchChapterList(novelPath, sitePage);
-
-    return {
-      chapters: chapters.reverse(),
-    };
+    // keep the table of contents read by parseNovel while paging, otherwise a
+    // novel that grows between calls makes pages repeat or skip
+    const toc = this.tocCache[novelPath] || (await this.getToc(novelPath));
+    return { chapters: await this.getAppPage(toc, parseInt(page, 10) || 1) };
   }
 
-  pagesCount: Record<string, number> = {};
+  tocCache: Record<string, Toc> = {};
 
-  // chapters of one site page, newest first
-  async fetchChapterList(
-    novelPath: string,
-    sitePage: number,
-  ): Promise<{ chapters: Plugin.ChapterItem[]; pagesCount: number }> {
+  // The site's table of contents is newest first with only its last page
+  // partial. App page k shows chapters [size * (k - 1), size * k) counted
+  // from the first chapter, i.e. a slice of two neighbouring site pages.
+  async getAppPage(toc: Toc, page: number): Promise<Plugin.ChapterItem[]> {
+    const sitePage = toc.pagesCount - page + 1;
+    if (sitePage < 1) return [];
+
+    const older = await this.getSitePage(toc, sitePage);
+    const newer =
+      sitePage > 1 && toc.lastPageCount < toc.pageSize
+        ? await this.getSitePage(toc, sitePage - 1)
+        : [];
+    const skip = page > 1 ? toc.pageSize - toc.lastPageCount : 0;
+
+    return [...older.reverse(), ...newer.reverse()].slice(
+      skip,
+      skip + toc.pageSize,
+    );
+  }
+
+  async getSitePage(toc: Toc, sitePage: number) {
+    if (sitePage === 1) return [...toc.firstPage];
+    if (sitePage === toc.pagesCount) return [...toc.lastPage];
+    return (await this.fetchChapterList(toc.chaptersPath, sitePage)).chapters;
+  }
+
+  async getToc(novelPath: string, novelHtml?: string): Promise<Toc> {
+    // the table of contents slug may differ from the novel slug, take the
+    // link from the novel page
+    const html = novelHtml ?? (await this.safeFecth(this.site + novelPath));
     const pagePath =
       this.id == 'ranobes'
         ? novelPath.split('-')[0]
         : '/' + novelPath.split('-').slice(1).join('-').split('.')[0];
     const chaptersPath =
+      html.match(/\/chapters\/[^"'/?#]+\/(?=["'])/)?.[0].slice(0, -1) ||
       '/chapters' + pagePath.replace(this.options.path + '/', '');
+
+    const first = await this.fetchChapterList(chaptersPath, 1);
+    const last =
+      first.pagesCount > 1
+        ? await this.fetchChapterList(chaptersPath, first.pagesCount)
+        : first;
+    const toc: Toc = {
+      chaptersPath,
+      pagesCount: first.pagesCount,
+      pageSize:
+        first.pagesCount > 1
+          ? first.chapters.length
+          : first.chapters.length || 1,
+      lastPageCount: last.chapters.length,
+      firstPage: first.chapters,
+      lastPage: last.chapters,
+      latestChapter: first.chapters[0],
+    };
+    this.tocCache[novelPath] = toc;
+    return toc;
+  }
+
+  // chapters of one site page, newest first
+  async fetchChapterList(
+    chaptersPath: string,
+    sitePage: number,
+  ): Promise<{ chapters: Plugin.ChapterItem[]; pagesCount: number }> {
     const pageBody = await this.safeFecth(
       this.site + chaptersPath + '/page/' + sitePage,
     );
-
     const baseUrl = this.site;
     let isScript = false;
     let isChapter = false;
@@ -549,4 +581,15 @@ type ChapterEntry = {
   title: string;
   date: string;
   link: string;
+};
+
+type Toc = {
+  chaptersPath: string;
+  pagesCount: number;
+  pageSize: number;
+  lastPageCount: number;
+  // newest first, as on the site
+  firstPage: Plugin.ChapterItem[];
+  lastPage: Plugin.ChapterItem[];
+  latestChapter?: Plugin.ChapterItem;
 };
