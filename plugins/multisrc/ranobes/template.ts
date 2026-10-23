@@ -367,24 +367,22 @@ export class RanobesPlugin implements Plugin.PluginBase {
     novel.chapters = chapters;
 
     // the novel page only lists the latest chapters; load the oldest page
-    // so the list starts from the first chapter
-    try {
-      const newest = await this.fetchChapterList(novelPath, 1);
-      novel.totalPages = newest.pagesCount;
-      if (newest.chapters[0]?.path) {
-        novel.latestChapter = newest.chapters[0];
-      }
-      novel.chapters = (
-        newest.pagesCount > 1
-          ? (await this.fetchChapterList(novelPath, newest.pagesCount)).chapters
-          : newest.chapters
-      )
-        .reverse()
-        .map(chapter => ({ ...chapter, page: '1' }));
-    } catch {
-      // keep the latest chapters from the novel page
-      novel.chapters = chapters.reverse();
+    // so the list starts from the first chapter. Errors are not swallowed:
+    // the latest chapters would end up on page 1 in the wrong order.
+    const newest = await this.fetchChapterList(novelPath, 1);
+    // parsePage maps pages with this count until the novel is reloaded
+    this.pagesCount[novelPath] = newest.pagesCount;
+    novel.totalPages = newest.pagesCount;
+    if (newest.chapters[0]?.path) {
+      novel.latestChapter = newest.chapters[0];
     }
+    novel.chapters = (
+      newest.pagesCount > 1
+        ? (await this.fetchChapterList(novelPath, newest.pagesCount)).chapters
+        : newest.chapters
+    )
+      .reverse()
+      .map(chapter => ({ ...chapter, page: '1' }));
 
     if (!novel.latestChapter && novel.chapters.length) {
       novel.latestChapter = novel.chapters[novel.chapters.length - 1];
@@ -396,9 +394,12 @@ export class RanobesPlugin implements Plugin.PluginBase {
   // The site lists chapters newest first, so app page 1 (oldest chapters)
   // is the last page of the site's table of contents.
   async parsePage(novelPath: string, page: string): Promise<Plugin.SourcePage> {
+    // keep one page count while paging, otherwise a novel that grows a page
+    // between calls makes pages repeat or skip
     let pagesCount = this.pagesCount[novelPath];
     if (!pagesCount) {
       pagesCount = (await this.fetchChapterList(novelPath, 1)).pagesCount;
+      this.pagesCount[novelPath] = pagesCount;
     }
     const sitePage = Math.max(pagesCount - parseInt(page, 10) + 1, 1);
     const { chapters } = await this.fetchChapterList(novelPath, sitePage);
@@ -503,8 +504,6 @@ export class RanobesPlugin implements Plugin.PluginBase {
       sitePage,
       ...pageLinks,
     );
-    this.pagesCount[novelPath] = pagesCount;
-
     return { chapters, pagesCount };
   }
 
