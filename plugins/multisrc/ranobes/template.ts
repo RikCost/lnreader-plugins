@@ -28,7 +28,7 @@ export class RanobesPlugin implements Plugin.PluginBase {
     this.name = metadata.sourceName;
     this.icon = 'multisrc/ranobes/ranobes/icon.png';
     this.site = metadata.sourceSite;
-    this.version = '2.0.2';
+    this.version = '2.0.3';
     this.options = metadata.options as RanobesOptions;
   }
 
@@ -195,6 +195,8 @@ export class RanobesPlugin implements Plugin.PluginBase {
     let isCover = false;
     let isAuthor = false;
     let isSummary = false;
+    let isDescription = false;
+    let isStyle = false;
     let isStatus = false;
     let isStatusText = false;
     let isGenres = false;
@@ -224,6 +226,21 @@ export class RanobesPlugin implements Plugin.PluginBase {
             attribs['itemprop'] === 'description')
         ) {
           isSummary = true;
+        }
+        // newer markup: the first cont-text block inside .r-desription
+        if (name === 'div' && attribs['class']?.includes('r-desription')) {
+          isDescription = true;
+        }
+        if (
+          isDescription &&
+          name === 'div' &&
+          attribs['class']?.startsWith('cont-text')
+        ) {
+          isSummary = true;
+          isDescription = false;
+        }
+        if (name === 'style') {
+          isStyle = true;
         }
         if (
           name === 'li' &&
@@ -280,8 +297,8 @@ export class RanobesPlugin implements Plugin.PluginBase {
         if (isAuthor) {
           novel.author = data;
         }
-        if (isSummary) {
-          novel.summary += data.trim();
+        if (isSummary && !isStyle) {
+          novel.summary += data;
         }
         if (isStatusText) {
           novel.status =
@@ -311,6 +328,12 @@ export class RanobesPlugin implements Plugin.PluginBase {
           isGenresText = false;
           isStatus = false;
         }
+        if (name === 'style') {
+          isStyle = false;
+        }
+        if (name === 'p' && isSummary) {
+          novel.summary += '\n\n';
+        }
         if (name === 'div') {
           isSummary = false;
           isGenres = false;
@@ -333,6 +356,11 @@ export class RanobesPlugin implements Plugin.PluginBase {
     });
     parser.write(html);
     parser.end();
+    novel.summary = novel.summary
+      ?.replace(/[ \t]*\n[ \t]*/g, '\n')
+      .replace(/[ \t]{2,}/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
     novel.genres = genreArray.join(', ');
     novel.totalPages = Math.ceil((maxChapters || 1) / 25);
     novel.chapters = chapters;
