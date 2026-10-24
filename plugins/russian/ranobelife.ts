@@ -105,14 +105,20 @@ class RanobeLife implements Plugin.PluginBase {
     };
 
     // the chapter list is embedded as JSON for the page's Vue component
+    // A missing block means the markup changed: fail instead of showing a
+    // novel without chapters (a real empty list is still accepted).
     const json = html.match(/window\.__DATA__ = (\{[\s\S]*?\});?\s*<\/script>/);
-    const data: PageData = json ? JSON.parse(json[1]) : { chapters: [] };
-    novel.chapters = (data.chapters || [])
+    const data: PageData | undefined = json ? JSON.parse(json[1]) : undefined;
+    if (!data || !Array.isArray(data.chapters)) {
+      throw new Error('Не удалось загрузить список глав');
+    }
+    const novelId = data.news_id || novelPath.match(/^\/(\d+)-/)?.[1];
+    novel.chapters = data.chapters
       .slice()
       .sort((a, b) => a.posi - b.posi)
       .map(chapter => ({
         name: chapter.title,
-        path: '/reader/' + data.news_id + '/' + chapter.id,
+        path: '/reader/' + novelId + '/' + chapter.id,
         releaseTime: this.parseDate(chapter.date),
         chapterNumber: chapter.posi,
       }));
@@ -189,7 +195,7 @@ class RanobeLife implements Plugin.PluginBase {
       ? url
       : this.site + (url.startsWith('/') ? '' : '/') + url;
 
-  resolveUrl = (path: string) => this.site + path;
+  resolveUrl = (path: string) => this.absolute(path);
 
   filters = {
     sort: {
