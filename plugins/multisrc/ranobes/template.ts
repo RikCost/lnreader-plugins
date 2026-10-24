@@ -32,8 +32,13 @@ export class RanobesPlugin implements Plugin.PluginBase {
     this.options = metadata.options as RanobesOptions;
   }
 
-  async safeFecth(url: string, init?: FetchInit): Promise<string> {
+  async safeFecth(
+    url: string,
+    init?: FetchInit,
+    emptyOn404?: boolean,
+  ): Promise<string> {
     const r = await fetchApi(url, init);
+    if (r.status === 404 && emptyOn404) return '';
     if (!r.ok)
       throw new Error(
         'Could not reach site (' + r.status + ') try to open in webview.',
@@ -570,7 +575,8 @@ export class RanobesPlugin implements Plugin.PluginBase {
       });
     } else {
       const link = `${this.site}/search/${searchTerm}/page/${page}`;
-      html = await this.safeFecth(link);
+      // the English site answers 404 when nothing is found
+      html = await this.safeFecth(link, undefined, true);
     }
     return this.parseNovels(html);
   }
