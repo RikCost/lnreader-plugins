@@ -168,7 +168,8 @@ class RanobeMe implements Plugin.PluginBase {
     );
   }
 
-  resolveUrl = (path: string) => this.site + path;
+  resolveUrl = (path: string) =>
+    /^https?:\/\//i.test(path) ? path : this.site + path;
 
   filters = {
     sort: {
