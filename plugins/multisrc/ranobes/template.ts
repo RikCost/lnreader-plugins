@@ -15,6 +15,8 @@ export type RanobesMetadata = {
   options?: RanobesOptions;
 };
 
+const SITE_PAGE_SIZE = 25;
+
 export class RanobesPlugin implements Plugin.PluginBase {
   id: string;
   name: string;
@@ -374,8 +376,8 @@ export class RanobesPlugin implements Plugin.PluginBase {
     // the table of contents. Errors are not swallowed: the latest chapters
     // would end up on page 1 in the wrong order.
     const toc = await this.getToc(novelPath, html);
-    novel.totalPages = toc.pagesCount;
-    novel.latestChapter = toc.latestChapter;
+    novel.totalPages = Math.max(Math.ceil(toc.total / toc.pageSize), 1);
+    novel.latestChapter = toc.newest[0];
     novel.chapters = (await this.getAppPage(toc, 1)).map(chapter => ({
       ...chapter,
       page: '1',
@@ -388,38 +390,54 @@ export class RanobesPlugin implements Plugin.PluginBase {
   }
 
   async parsePage(novelPath: string, page: string): Promise<Plugin.SourcePage> {
-    // keep the table of contents read by parseNovel while paging, otherwise a
-    // novel that grows between calls makes pages repeat or skip
-    const toc = this.tocCache[novelPath] || (await this.getToc(novelPath));
+    const cached = this.tocCache[novelPath];
+    const toc = cached
+      ? await this.refreshToc(cached)
+      : await this.getToc(novelPath);
     return { chapters: await this.getAppPage(toc, parseInt(page, 10) || 1) };
   }
 
   tocCache: Record<string, Toc> = {};
 
-  // The site's table of contents is newest first with only its last page
-  // partial. App page k shows chapters [size * (k - 1), size * k) counted
-  // from the first chapter, i.e. a slice of two neighbouring site pages.
+  // The site's table of contents is newest first, so every new chapter
+  // shifts all its pages. Chapters are placed by their index counted from
+  // the first chapter, which does not change when new ones are published:
+  // app page k shows indexes [size * (k - 1), size * k).
   async getAppPage(toc: Toc, page: number): Promise<Plugin.ChapterItem[]> {
-    const sitePage = toc.pagesCount - page + 1;
-    if (sitePage < 1) return [];
+    const size = toc.pageSize;
+    const from = size * (page - 1);
+    const to = Math.min(toc.total, size * page) - 1;
+    if (from > to) return [];
 
-    const older = await this.getSitePage(toc, sitePage);
-    const newer =
-      sitePage > 1 && toc.lastPageCount < toc.pageSize
-        ? await this.getSitePage(toc, sitePage - 1)
-        : [];
-    const skip = page > 1 ? toc.pageSize - toc.lastPageCount : 0;
+    // site page p holds newest-first positions [size * (p - 1), size * p)
+    const firstSitePage = Math.floor((toc.total - 1 - to) / size) + 1;
+    const lastSitePage = Math.floor((toc.total - 1 - from) / size) + 1;
+    const result: Plugin.ChapterItem[] = [];
 
-    return [...older.reverse(), ...newer.reverse()].slice(
-      skip,
-      skip + toc.pageSize,
-    );
+    for (let sitePage = firstSitePage; sitePage <= lastSitePage; sitePage++) {
+      // toc.newest is fresh: getToc/refreshToc read it right before this call
+      const list =
+        sitePage === 1
+          ? toc.newest
+          : (await this.fetchChapterList(toc.chaptersPath, sitePage)).chapters;
+      list.forEach((chapter, position) => {
+        const index = toc.total - 1 - (size * (sitePage - 1) + position);
+        if (index >= from && index <= to) result[index - from] = chapter;
+      });
+    }
+    return result.filter(chapter => chapter);
   }
 
-  async getSitePage(toc: Toc, sitePage: number) {
-    if (sitePage === 1) return [...toc.firstPage];
-    if (sitePage === toc.pagesCount) return [...toc.lastPage];
-    return (await this.fetchChapterList(toc.chaptersPath, sitePage)).chapters;
+  // re-reads the newest page and counts the chapters published since
+  async refreshToc(toc: Toc): Promise<Toc> {
+    const newest = (await this.fetchChapterList(toc.chaptersPath, 1)).chapters;
+    const added = newest.findIndex(
+      chapter => chapter.path === toc.newest[0]?.path,
+    );
+    if (added < 0) return this.buildToc(toc.novelPath, toc.chaptersPath);
+    toc.total += added;
+    toc.newest = newest;
+    return toc;
   }
 
   async getToc(novelPath: string, novelHtml?: string): Promise<Toc> {
@@ -433,23 +451,25 @@ export class RanobesPlugin implements Plugin.PluginBase {
     const chaptersPath =
       html.match(/\/chapters\/[^"'/?#]+\/(?=["'])/)?.[0].slice(0, -1) ||
       '/chapters' + pagePath.replace(this.options.path + '/', '');
+    return this.buildToc(novelPath, chaptersPath);
+  }
 
+  async buildToc(novelPath: string, chaptersPath: string): Promise<Toc> {
     const first = await this.fetchChapterList(chaptersPath, 1);
-    const last =
+    // every site page but the last one is full (25 chapters on both sites)
+    const pageSize =
+      first.pagesCount > 1 ? first.chapters.length : SITE_PAGE_SIZE;
+    const lastPageCount =
       first.pagesCount > 1
-        ? await this.fetchChapterList(chaptersPath, first.pagesCount)
-        : first;
+        ? (await this.fetchChapterList(chaptersPath, first.pagesCount)).chapters
+            .length
+        : first.chapters.length;
     const toc: Toc = {
+      novelPath,
       chaptersPath,
-      pagesCount: first.pagesCount,
-      pageSize:
-        first.pagesCount > 1
-          ? first.chapters.length
-          : first.chapters.length || 1,
-      lastPageCount: last.chapters.length,
-      firstPage: first.chapters,
-      lastPage: last.chapters,
-      latestChapter: first.chapters[0],
+      pageSize,
+      total: pageSize * (first.pagesCount - 1) + lastPageCount,
+      newest: first.chapters,
     };
     this.tocCache[novelPath] = toc;
     return toc;
@@ -590,12 +610,10 @@ type ChapterEntry = {
 };
 
 type Toc = {
+  novelPath: string;
   chaptersPath: string;
-  pagesCount: number;
   pageSize: number;
-  lastPageCount: number;
-  // newest first, as on the site
-  firstPage: Plugin.ChapterItem[];
-  lastPage: Plugin.ChapterItem[];
-  latestChapter?: Plugin.ChapterItem;
+  total: number;
+  // the site's first table of contents page, newest first
+  newest: Plugin.ChapterItem[];
 };
