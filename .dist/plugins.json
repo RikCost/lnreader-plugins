@@ -40,7 +40,7 @@
 		"name": "Galaxy Novels",
 		"site": "https://galaxynovels.com/",
 		"lang": "‎العربية",
-		"version": "1.1.0",
+		"version": "1.1.1",
 		"url": "https://raw.githubusercontent.com/RikCost/lnreader-plugins/plugins/test/.js/src/plugins/arabic/galaxynovels.js",
 		"iconUrl": "https://raw.githubusercontent.com/RikCost/lnreader-plugins/plugins/test/public/static/src/ar/galaxynovels/icon.png"
 	},
@@ -247,7 +247,7 @@
 		"name": "AllNovel",
 		"site": "https://novelfull.com/",
 		"lang": "English",
-		"version": "2.3.4",
+		"version": "2.3.5",
 		"url": "https://raw.githubusercontent.com/RikCost/lnreader-plugins/plugins/test/.js/src/plugins/english/AllNovel[readnovelfull].js",
 		"iconUrl": "https://raw.githubusercontent.com/RikCost/lnreader-plugins/plugins/test/public/static/multisrc/readnovelfull/allnovel/icon.png"
 	},
@@ -1112,7 +1112,7 @@
 		"name": "Novel Fire",
 		"site": "https://novelfire.net/",
 		"lang": "English",
-		"version": "1.4.4",
+		"version": "1.4.5",
 		"url": "https://raw.githubusercontent.com/RikCost/lnreader-plugins/plugins/test/.js/src/plugins/english/NovelFire[novelfire].js",
 		"iconUrl": "https://raw.githubusercontent.com/RikCost/lnreader-plugins/plugins/test/public/static/multisrc/novelfire/novelfire/icon.png"
 	},
@@ -2106,6 +2106,15 @@
 		"version": "1.0.2",
 		"url": "https://raw.githubusercontent.com/RikCost/lnreader-plugins/plugins/test/.js/src/plugins/russian/ficbook.js",
 		"iconUrl": "https://raw.githubusercontent.com/RikCost/lnreader-plugins/plugins/test/public/static/src/ru/ficbook/icon.png"
+	},
+	{
+		"id": "hexnovels",
+		"name": "HexNovels",
+		"site": "https://hexnovels.me",
+		"lang": "Русский",
+		"version": "1.0.0",
+		"url": "https://raw.githubusercontent.com/RikCost/lnreader-plugins/plugins/test/.js/src/plugins/russian/hexnovels.js",
+		"iconUrl": "https://raw.githubusercontent.com/RikCost/lnreader-plugins/plugins/test/public/static/src/ru/hexnovels/icon.png"
 	},
 	{
 		"id": "ifreedom",
