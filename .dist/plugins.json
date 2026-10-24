@@ -2153,6 +2153,24 @@
 		"iconUrl": "https://raw.githubusercontent.com/RikCost/lnreader-plugins/plugins/test/public/static/multisrc/novelcool/novelcool/icon.png"
 	},
 	{
+		"id": "ranobelife",
+		"name": "Ranobe.life",
+		"site": "https://ranobe.life",
+		"lang": "Русский",
+		"version": "1.0.0",
+		"url": "https://raw.githubusercontent.com/RikCost/lnreader-plugins/plugins/test/.js/src/plugins/russian/ranobelife.js",
+		"iconUrl": "https://raw.githubusercontent.com/RikCost/lnreader-plugins/plugins/test/public/static/src/ru/ranobelife/icon.png"
+	},
+	{
+		"id": "ranobeme",
+		"name": "Ranobe.me",
+		"site": "https://ranobe.me",
+		"lang": "Русский",
+		"version": "1.0.0",
+		"url": "https://raw.githubusercontent.com/RikCost/lnreader-plugins/plugins/test/.js/src/plugins/russian/ranobeme.js",
+		"iconUrl": "https://raw.githubusercontent.com/RikCost/lnreader-plugins/plugins/test/public/static/src/ru/ranobeme/icon.png"
+	},
+	{
 		"id": "ranobemir",
 		"name": "РанобэМир",
 		"site": "https://ranobemir.com",
