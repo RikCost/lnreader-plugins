@@ -35,16 +35,20 @@ jobs:
           git fetch origin master "$FEATURE_BRANCH"
           git fetch upstream master
 
-      - name: Sync master (fast-forward from upstream)
+      - name: Sync master (fast-forward or merge from upstream)
         run: |
           git checkout -B master origin/master
-          if ! git merge --ff-only upstream/master; then
-            echo "❌ master cannot be fast-forwarded (local commits diverged). Resolve manually."
+          if git merge --ff-only upstream/master 2>/dev/null; then
+            echo "✅ master fast-forwarded to upstream/master"
+          elif git merge --no-edit upstream/master; then
+            echo "✅ master merged upstream/master (local commits preserved)"
+          else
+            echo "❌ Merge conflict in master. Resolve manually."
+            git merge --abort
             exit 1
           fi
           if [ "$(git rev-parse master)" != "$(git rev-parse origin/master)" ]; then
             git push origin master
-            echo "✅ master synced to upstream/master"
           else
             echo "ℹ️ master already up to date"
           fi
