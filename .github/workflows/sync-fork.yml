@@ -1,0 +1,72 @@
+name: Sync Fork
+
+on:
+  schedule:
+    # Every day at 04:00 UTC
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+env:
+  UPSTREAM: lnreader/lnreader-plugins
+  FEATURE_BRANCH: feat/multisrc-skip-down
+
+jobs:
+  sync:
+    name: Sync master & feat/multisrc-skip-down
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git remote add upstream "https://github.com/${UPSTREAM}.git" || git remote set-url upstream "https://github.com/${UPSTREAM}.git"
+          git fetch origin master "$FEATURE_BRANCH"
+          git fetch upstream master
+
+      - name: Sync master (fast-forward from upstream)
+        run: |
+          git checkout -B master origin/master
+          if ! git merge --ff-only upstream/master; then
+            echo "❌ master cannot be fast-forwarded (local commits diverged). Resolve manually."
+            exit 1
+          fi
+          if [ "$(git rev-parse master)" != "$(git rev-parse origin/master)" ]; then
+            git push origin master
+            echo "✅ master synced to upstream/master"
+          else
+            echo "ℹ️ master already up to date"
+          fi
+
+      - name: Sync feat/multisrc-skip-down (merge upstream/master)
+        run: |
+          git checkout -B "$FEATURE_BRANCH" "origin/$FEATURE_BRANCH"
+          if ! git merge --no-edit upstream/master; then
+            echo "❌ Merge conflict in $FEATURE_BRANCH. Resolve manually."
+            git merge --abort
+            exit 1
+          fi
+          if [ "$(git rev-parse "$FEATURE_BRANCH")" != "$(git rev-parse "origin/$FEATURE_BRANCH")" ]; then
+            git push origin "$FEATURE_BRANCH"
+            echo "✅ $FEATURE_BRANCH synced with upstream/master"
+          else
+            echo "ℹ️ $FEATURE_BRANCH already up to date"
+          fi
+
+  build-test:
+    name: Publish plugins/test
+    needs: sync
+    uses: ./.github/workflows/publish-plugins-test.yml
+    permissions:
+      contents: write
