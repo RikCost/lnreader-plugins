@@ -20,6 +20,8 @@ concurrency:
 jobs:
   publish:
     name: Publish Plugins
+    # The fork has no REPO_SCOPED_TOKEN secret; publishing happens upstream only
+    if: github.repository == 'lnreader/lnreader-plugins'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
